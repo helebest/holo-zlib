@@ -1,0 +1,34 @@
+# uv / Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 打包产物
+*.skill
+/dist/
+build/
+
+# 凭据（默认落在 <repo>/credentials/，整目录不入仓）
+/credentials/
+# 私有笔记（如 eAPI 逆向的技术参考）
+/private/
+# 下载的电子书
+/ebooks/
+# 兜底：任何叫 *credentials*.json 的也不入仓
+*credentials*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 测试/评测的 workspace 产物
+holo-zlib-workspace/

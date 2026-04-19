@@ -1,0 +1,30 @@
+# 打包 .skill 时排除的路径
+README.md
+CHANGELOG.md
+LICENSE
+.gitignore
+.claudeignore
+
+tests/
+evals/
+tools/
+credentials/
+private/
+ebooks/
+
+# dev-only：uv 管理；skill 运行时只要 python3 + stdlib
+pyproject.toml
+uv.lock
+
+.git/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.swp
+.DS_Store
+Thumbs.db
+holo-zlib-workspace/

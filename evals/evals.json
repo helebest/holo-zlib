@@ -1,0 +1,43 @@
+{
+  "skill_name": "holo-zlib",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我在 zlibrary 上找一下刘慈欣《三体》的 epub，前 5 个结果就够，挑分数最高的那本给我。",
+      "expected_output": "调用 scripts/zlib.sh search 传入关键词并带 --ext epub --limit 5；输出给出 book_id/hash 供后续下载。",
+      "files": [],
+      "assertions": [
+        "Agent invokes scripts/zlib.sh search (or python3 scripts/zlib.py search) with the query containing 三体",
+        "The invocation includes --ext epub",
+        "The invocation includes --limit 5",
+        "Agent does not prompt the user for clarifying info before calling the search",
+        "Response mentions book_id and hash from the search results (or explicitly reports a network/script failure and how to retry)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "ok 就下第一本吧，默认位置就行。book_id 我刚才看到是 1234567，hash 是 abc123def。",
+      "expected_output": "调用 scripts/zlib.sh download 1234567 abc123def，默认落到 <repo>/ebooks/，报告进度和最终文件路径。",
+      "files": [],
+      "assertions": [
+        "Agent invokes scripts/zlib.sh download (or python3 scripts/zlib.py download) with positional args 1234567 and abc123def in that order",
+        "Agent does not pass --output (because user said 默认位置就行)",
+        "Agent does not prompt the user for clarifying info before running the download",
+        "Response reports either the successful save path OR the failure mode (invalid hash / network error) in a way the user can act on"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "can you grab me a pdf of 'Designing Data-Intensive Applications'? just the most popular one, I don't care about year.",
+      "expected_output": "未显式提 Z-Library，仍召回本 skill；调用 scripts/zlib.sh search 并带 --ext pdf；对英文书名不做奇怪翻译。",
+      "files": [],
+      "assertions": [
+        "Agent invokes scripts/zlib.sh search (or python3 scripts/zlib.py search) — i.e. recognizes this as a Z-Library lookup even though 'Z-Library' is not named",
+        "Search query contains the English book title 'Designing Data-Intensive Applications' (no machine-translated variant)",
+        "The invocation includes --ext pdf",
+        "Agent does not prompt the user for clarifying info (year/author) before running the search",
+        "Response identifies a single recommended result (or explicitly reports search failure)"
+      ]
+    }
+  ]
+}
