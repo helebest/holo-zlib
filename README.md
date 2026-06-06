@@ -35,22 +35,49 @@ holo-zlib/
 The skill is portable and dependency-free at runtime. Credentials and downloads live
 outside the skill directory (at your project root) so they never ship with the skill.
 
+Invocation uses `python`; on Linux/macOS where only `python3` exists, substitute it. On
+Windows, `python` (from a venv or the Microsoft Store) works; the `py` launcher is not
+always installed, so don't rely on `py -3`.
+
 ### Claude Code
 
-- **From source**: `git clone <repo-url>`, then copy (or symlink) `skills/holo-zlib/`
-  into your project's `.claude/skills/holo-zlib/` (or the user-level
-  `~/.claude/skills/holo-zlib/`).
-- **Packaged**: run `uv run holo-zlib-package` to produce `dist/holo-zlib.skill`, then
-  install the `.skill` the way Claude Code imports skill packages.
-- **Credentials**: create `credentials/zlib.json` at your **project root** (the script
-  walks upward to find it; the `.claude` sibling counts as an ancestor).
+Claude Code discovers skills as **directories** — there is no install command and no
+`.skill` import step. Place the skill folder in one of these locations and it is picked up
+automatically (Claude consults it based on the `description` in its `SKILL.md`
+frontmatter, or you can invoke it by name):
 
-### Codex
+- **Project** (commit it to share with the repo): `<project>/.claude/skills/holo-zlib/`
+- **Personal** (available in all your projects): `~/.claude/skills/holo-zlib/`
 
-- `git clone <repo-url>`; work inside the repo or place `skills/holo-zlib/` where Codex
-  can see it, then call `python3 skills/holo-zlib/scripts/zlib.py …` directly (stdlib
-  only, nothing to install).
-- **Credentials**: same as above — `credentials/zlib.json` at the repo/project root.
+```bash
+git clone <repo-url>
+mkdir -p .claude/skills
+cp -r holo-zlib/skills/holo-zlib .claude/skills/holo-zlib   # or symlink it
+```
+
+**Credentials**: create `credentials/zlib.json` at your **project root** (the script walks
+upward to find it; the `.claude` sibling counts as an ancestor).
+
+### claude.ai / Claude API
+
+The packaged `.skill` (a zip built by `uv run holo-zlib-package` → `dist/holo-zlib.skill`)
+is for these platforms — **not** Claude Code:
+
+- **claude.ai**: upload the `.skill` in settings (the Capabilities/Features area, on a
+  plan with code execution enabled).
+- **Claude API**: upload via the `/v1/skills` endpoints (currently beta — header
+  `skills-2025-10-02`).
+
+### Codex / direct CLI
+
+`git clone <repo-url>`; work inside the repo or place `skills/holo-zlib/` where the agent
+can see it, then call the CLI directly — stdlib only, nothing to install:
+
+```bash
+python skills/holo-zlib/scripts/zlib.py search "title" --ext epub --limit 5
+```
+
+**Credentials**: same as above — `credentials/zlib.json` at the repo/project root.
 
 ### Copy-paste prompt for an agent
 
@@ -63,13 +90,13 @@ Install and use the holo-zlib skill (Z-Library ebook search/download, pure Pytho
 2. Create credentials/zlib.json at the project root:
    {"remix_userid": "YOUR_USERID", "remix_userkey": "YOUR_USERKEY"}
    (log in at https://z-library.sk and take remix_userid / remix_userkey from cookies).
-3. Search Z-Library for an epub of "The Three-Body Problem", top 5, pick the
-   highest-scored one, and show me its book_id and hash.
+3. Search Z-Library for an epub of "The Three-Body Problem", top 5, pick the best
+   match, and show me its book_id and hash.
 4. Ensure an ebooks/ directory exists at the project root (create it if missing — that is
    where the default download location resolves), then after I confirm, download the one
    I pick into it and tell me the final file path.
-(Invocation: python3 skills/holo-zlib/scripts/zlib.py search/download …; on Windows use
-python or py -3.)
+(Invocation: python skills/holo-zlib/scripts/zlib.py search/download … — on Linux/macOS
+substitute python3 if needed.)
 ```
 
 > Replace `<repo-url>` with the actual repository URL once it is pushed.
@@ -86,8 +113,8 @@ EOF
 # 2. (optional) create ebooks/ here so downloads default to the project root
 mkdir -p ebooks
 
-# 3. Try it (on Windows: python / py -3)
-python3 skills/holo-zlib/scripts/zlib.py search "The Three-Body Problem" --ext epub --limit 3
+# 3. Try it (use python; on Linux/macOS substitute python3 if needed)
+python skills/holo-zlib/scripts/zlib.py search "The Three-Body Problem" --ext epub --limit 3
 ```
 
 > The download default resolves to the first existing `ebooks/` found while walking up

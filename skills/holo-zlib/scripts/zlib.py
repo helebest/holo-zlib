@@ -2,13 +2,14 @@
 """Z-Library book search & download CLI (standard library only, Python 3.10+).
 
 Usage:
-  python3 zlib.py search <query> [--ext epub|pdf|mobi] [--limit N]
+  python3 zlib.py search <query> [--ext FORMAT] [--limit N]
   python3 zlib.py download <book_id> <hash> [--output DIR]
 
 eAPI requests, auth, and credential resolution live in client.py (same directory);
 this file only handles argument parsing and output formatting. See client.py and
 SKILL.md for environment variables.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -77,8 +78,18 @@ def cmd_search(args, client) -> bool:
     for i, b in enumerate(books, 1):
         print(f"{i}. {b['title']}")
         print(f"   Author: {b.get('author', 'Unknown').strip()}")
-        print(f"   Year: {b.get('year', '?')}  Format: {b['extension']}  Size: {b['filesizeString']}")
-        print(f"   Score: {b.get('interestScore', '?')}  Language: {b.get('language', '?')}")
+        print(
+            f"   Year: {b.get('year', '?')}  Format: {b['extension']}  Size: {b['filesizeString']}"
+        )
+        # Show both score fields under their real names: the list is sorted by qualityScore
+        # but qualityScore is often null/0 and interestScore is often uniformly high, so a
+        # single ambiguous "Score" would mislead the agent into ranking by the wrong field.
+        qs = b.get("qualityScore")
+        print(
+            f"   Quality: {qs if qs is not None else '?'}  "
+            f"Popularity: {b.get('interestScore', '?')}  "
+            f"Language: {b.get('language', '?')}"
+        )
         print(f"   book_id: {b['id']}  hash: {b['hash']}")
         print()
     return True
@@ -87,9 +98,7 @@ def cmd_search(args, client) -> bool:
 def cmd_download(args, client) -> bool:
     """Return True on a successful download, False on API error / quota block."""
     # Fetch the CDN direct link via the eAPI (bypasses Cloudflare).
-    file_info = client.make_request(
-        f"/eapi/book/{args.book_id}/{args.hash}/file", method="GET"
-    )
+    file_info = client.make_request(f"/eapi/book/{args.book_id}/{args.hash}/file", method="GET")
 
     if not file_info.get("success"):
         print("Failed to get download link:", json.dumps(file_info, ensure_ascii=False))
@@ -152,7 +161,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("search", help="Search for books")
     sp.add_argument("query", help="Search query")
-    sp.add_argument("--ext", help="File format filter (epub/pdf/mobi)")
+    sp.add_argument(
+        "--ext",
+        help="Format filter, e.g. epub/pdf/mobi (passed through to the API unvalidated; "
+        "any format Z-Library supports works)",
+    )
     sp.add_argument("--limit", type=int, default=10, help="Number of results (default 10)")
 
     dp = sub.add_parser("download", help="Download a book")

@@ -2,6 +2,7 @@
 
 cmd_* take an explicit `client` argument, so tests pass the patched `client` fixture.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,25 +34,46 @@ def _download_metadata(url: str = "https://cdn.example/file.epub", allow: bool =
 
 # ---------- cmd_search ----------
 
+
 def test_cmd_search_prints_sorted_results(zlib_cli, client, mock_opener, capsys):
     payload = {
         "success": 1,
         "exactBooksCount": 2,
         "books": [
-            {"id": "1", "hash": "h1", "title": "Low", "author": "a",
-             "year": "2020", "extension": "epub", "filesizeString": "1 MB",
-             "qualityScore": "3.0", "interestScore": "1.0", "language": "en"},
-            {"id": "2", "hash": "h2", "title": "High", "author": "b",
-             "year": "2024", "extension": "epub", "filesizeString": "2 MB",
-             "qualityScore": "9.0", "interestScore": "4.0", "language": "en"},
+            {
+                "id": "1",
+                "hash": "h1",
+                "title": "Low",
+                "author": "a",
+                "year": "2020",
+                "extension": "epub",
+                "filesizeString": "1 MB",
+                "qualityScore": "3.0",
+                "interestScore": "1.0",
+                "language": "en",
+            },
+            {
+                "id": "2",
+                "hash": "h2",
+                "title": "High",
+                "author": "b",
+                "year": "2024",
+                "extension": "epub",
+                "filesizeString": "2 MB",
+                "qualityScore": "9.0",
+                "interestScore": "4.0",
+                "language": "en",
+            },
         ],
     }
     mock_opener.queue = [json.dumps(payload).encode()]
     zlib_cli.cmd_search(_search_args("x", ext="epub", limit=5), client)
     out = capsys.readouterr().out
-    # Higher score first.
+    # Sorted by qualityScore descending (High has qualityScore 9.0 > Low's 3.0).
     assert out.index("High") < out.index("Low")
     assert "book_id: 2  hash: h2" in out
+    # Both score fields are shown under their real names (not an ambiguous "Score").
+    assert "Quality: 9.0  Popularity: 4.0" in out
 
 
 def test_cmd_search_failure(zlib_cli, client, mock_opener, capsys):
@@ -69,6 +91,7 @@ def test_cmd_search_empty(zlib_cli, client, mock_opener, capsys):
 
 
 # ---------- cmd_download ----------
+
 
 def test_cmd_download_writes_file(zlib_cli, client, mock_opener, tmp_path, capsys):
     mock_opener.queue = [_download_metadata(), b"EPUB-BYTES"]
@@ -103,6 +126,7 @@ def test_cmd_download_unique_suffix_on_collision(zlib_cli, client, mock_opener, 
 
 
 # ---------- main() ----------
+
 
 def test_main_search_returns_zero(zlib_cli, client, mock_opener, capsys):
     mock_opener.queue = [b'{"success": 1, "exactBooksCount": 0, "books": []}']
@@ -139,11 +163,23 @@ def test_cmd_search_handles_null_quality_score(zlib_cli, client, mock_opener, ca
         "success": 1,
         "exactBooksCount": 1,
         "books": [
-            {"id": "1", "hash": "h", "title": "T", "author": "a", "year": "2024",
-             "extension": "epub", "filesizeString": "1 MB", "qualityScore": None,
-             "interestScore": "1.0", "language": "en"},
+            {
+                "id": "1",
+                "hash": "h",
+                "title": "T",
+                "author": "a",
+                "year": "2024",
+                "extension": "epub",
+                "filesizeString": "1 MB",
+                "qualityScore": None,
+                "interestScore": "1.0",
+                "language": "en",
+            },
         ],
     }
     mock_opener.queue = [json.dumps(payload).encode()]
     assert zlib_cli.cmd_search(_search_args("x"), client) is True
-    assert "book_id: 1" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "book_id: 1" in out
+    # A null qualityScore renders as "?" rather than crashing or printing "None".
+    assert "Quality: ?  Popularity: 1.0" in out
