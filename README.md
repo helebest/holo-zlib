@@ -5,11 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Python](https://img.shields.io/badge/python-%E2%89%A53.10-blue.svg)
 ![Dependencies](https://img.shields.io/badge/dependencies-stdlib--only-brightgreen.svg)
-![Claude Code Skill](https://img.shields.io/badge/Claude%20Code-Skill-8A2BE2.svg)
+![Agent Skill](https://img.shields.io/badge/Agent-Skill-8A2BE2.svg)
 
-A Claude Code skill that searches and downloads ebooks from Z-Library via the eAPI.
-It uses the Python standard library only — runs on Python >= 3.10 with no third-party
-dependencies.
+A portable **Agent Skill** that searches and downloads ebooks from Z-Library via the
+eAPI — usable by any AI agent that can read a `SKILL.md` and run a script (Claude Code,
+Codex, Cursor, Gemini CLI, custom agents…), or straight from the shell. It is not tied to
+any single agent. It uses the Python standard library only — runs on Python >= 3.10 with
+no third-party dependencies.
 
 ## Repository layout
 
@@ -70,10 +72,12 @@ is for these platforms — **not** Claude Code:
 - **Claude API**: upload via the `/v1/skills` endpoints (currently beta — header
   `skills-2025-10-02`).
 
-### Codex / direct CLI
+### Other agents (Codex, Cursor, Gemini CLI, …) / direct CLI
 
-`git clone <repo-url>`; work inside the repo or place `skills/holo-zlib/` where the agent
-can see it, then call the CLI directly — stdlib only, nothing to install:
+Any agent that can read `SKILL.md` and run a script can use this skill — it isn't tied to
+Claude Code. `git clone <repo-url>`; work inside the repo or place `skills/holo-zlib/`
+where the agent can see it (point the agent at `skills/holo-zlib/SKILL.md`), then call the
+CLI directly — stdlib only, nothing to install:
 
 ```bash
 python skills/holo-zlib/scripts/zlib.py search "title" --ext epub --limit 5
