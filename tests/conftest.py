@@ -1,53 +1,88 @@
-"""pytest 共享 fixtures。
+"""Shared pytest fixtures.
 
-zlib.py 里的 _credentials / _opener 是模块级缓存，需要在每个测试前后清零，
-否则上一条测试的 mock 会泄漏到下一条。
+The client module keeps `_credentials` / `_opener` as module-level caches. Loading a
+fresh copy per test (via importlib spec) keeps those caches from leaking between tests
+and avoids touching sys.path (which could shadow the standard-library `zlib`).
 """
 from __future__ import annotations
 
+import importlib.util
 import json
-import sys
+import re
+import shutil
+import uuid
 from pathlib import Path
 
 import pytest
 
-# 把 scripts/ 加入 sys.path，使 `import zlib_script` 可用
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "skills" / "holo-zlib" / "scripts"
 
 
 @pytest.fixture
-def zlib_module(monkeypatch, tmp_path):
-    """导入 zlib 模块的干净副本，并把凭据文件指向临时路径。"""
-    import importlib
+def tmp_path(request: pytest.FixtureRequest) -> Path:
+    """Create temp dirs without pytest's Windows 0o700 ACL handling.
 
-    # zlib.py 名字和标准库 zlib 冲突，需要从路径 import
-    spec = importlib.util.spec_from_file_location("zlib_script", SCRIPTS_DIR / "zlib.py")
+    In the Codex Windows sandbox, directories created with mode 0o700 can become
+    unreadable even to the creating process. Pytest's built-in tmp_path uses that mode
+    for basetemp, so keep this repository's temp dirs local and create them with the
+    platform default ACL instead.
+    """
+    root = Path(request.config.rootpath) / ".tmp" / "pytest-local"
+    root.mkdir(parents=True, exist_ok=True)
+
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", request.node.name).strip("_")
+    path = root / f"{safe_name}-{uuid.uuid4().hex}"
+    path.mkdir()
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _load_module(module_name: str, filename: str):
+    """Load a script module by file path (not via sys.path)."""
+    spec = importlib.util.spec_from_file_location(module_name, SCRIPTS_DIR / filename)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
 
-    creds_file = tmp_path / "zlibrary_credentials.json"
+
+@pytest.fixture
+def client(monkeypatch, tmp_path):
+    """A clean copy of the client module with credentials pointed at a temp file.
+
+    `client.py` has no stdlib name collision (unlike `zlib.py`), but it is still loaded
+    by spec for per-test cache isolation.
+    """
+    module = _load_module("zlib_client", "client.py")
+
+    creds_file = tmp_path / "zlib.json"
     creds_file.write_text(
         json.dumps({"remix_userid": "uid_test", "remix_userkey": "key_test"})
     )
     monkeypatch.setattr(module, "CREDENTIALS_FILE", str(creds_file))
     monkeypatch.setattr(module, "DOWNLOAD_DIR", str(tmp_path / "books"))
 
-    # 每条测试都从空缓存开始
     module._credentials = None
     module._opener = None
     return module
 
 
 @pytest.fixture
-def mock_opener(monkeypatch, zlib_module):
-    """返回一个可编程的 opener，代替 urllib 真实请求。
+def zlib_cli():
+    """The CLI module. Its cmd_* functions take a `client` argument; tests pass the
+    `client` fixture so the CLI exercises the same patched module the test set up."""
+    return _load_module("zlib_script", "zlib.py")
 
-    用法：
+
+@pytest.fixture
+def mock_opener(monkeypatch, client):
+    """A programmable opener that replaces real urllib requests.
+
+    Usage:
         mock_opener.queue = [b'{"success": 1, "books": []}']
-        # 或：
-        mock_opener.side_effect = [b'...', URLError('unreachable')]
+        # or queue an exception to simulate failure:
+        mock_opener.queue = [URLError("unreachable")]
     """
 
     class _MockResponse:
@@ -73,7 +108,16 @@ def mock_opener(monkeypatch, zlib_module):
             self.calls: list = []
 
         def open(self, req, timeout=None):
-            self.calls.append({"url": req.full_url, "method": req.get_method(), "timeout": timeout})
+            self.calls.append(
+                {
+                    "url": req.full_url,
+                    "method": req.get_method(),
+                    "timeout": timeout,
+                    # urllib capitalizes header keys (e.g. "Remix-userid", "Cookie").
+                    "headers": dict(req.header_items()),
+                    "body": req.data,
+                }
+            )
             if not self.queue:
                 raise AssertionError("mock opener queue exhausted")
             item = self.queue.pop(0)
@@ -82,5 +126,5 @@ def mock_opener(monkeypatch, zlib_module):
             return _MockResponse(item)
 
     opener = _MockOpener()
-    monkeypatch.setattr(zlib_module, "_get_opener", lambda: opener)
+    monkeypatch.setattr(client, "_get_opener", lambda: opener)
     return opener

@@ -1,0 +1,4 @@
+# holo-zlib has no runtime third-party dependencies — Python standard library only
+# (Python >= 3.10). This file exists to satisfy repository validation
+# (src/holo_zlib/validate.py requires a requirements.txt under scripts/) and to
+# declare "zero runtime dependencies" to other agent platforms.

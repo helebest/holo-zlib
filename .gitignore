@@ -7,19 +7,23 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
-# 打包产物
+# Test temp dirs (custom tmp_path fixture)
+.tmp/
+
+# Build artifacts
 *.skill
 /dist/
 build/
 
-# 凭据（默认落在 <repo>/credentials/，整目录不入仓）
-/credentials/
-# 私有笔记（如 eAPI 逆向的技术参考）
-/private/
-# 下载的电子书
-/ebooks/
-# 兜底：任何叫 *credentials*.json 的也不入仓
+# Credentials, private notes, and downloads. NOT anchored to the repo root: the skill's
+# runtime fallback writes them under skills/holo-zlib/{credentials,ebooks}/ too, so these
+# must match at any depth.
+credentials/
+private/
+ebooks/
+# Backstop: never commit credential files, by either naming scheme.
 *credentials*.json
+zlib.json
 
 # IDE
 .vscode/
@@ -30,5 +34,5 @@ build/
 .DS_Store
 Thumbs.db
 
-# 测试/评测的 workspace 产物
+# Test/eval workspace artifacts
 holo-zlib-workspace/
