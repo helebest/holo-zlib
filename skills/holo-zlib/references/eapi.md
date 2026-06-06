@@ -47,8 +47,12 @@ Key response (JSON) fields:
 - `books[]`: result list; each item has `id`, `hash`, `title`, `author`, `year`,
   `extension`, `filesizeString`, `qualityScore`, `interestScore`, `language`.
 
-The client sorts by `qualityScore` descending and prints `book_id` (= `id`) and `hash`
-for use when downloading.
+The client sorts by `qualityScore` descending, then prints each result with its
+`book_id` (= `id`) and `hash` (for downloading) plus both score fields, labeled
+`Quality` (`qualityScore`) and `Popularity` (`interestScore`). In practice `qualityScore`
+is frequently null/0 and `interestScore` is often uniformly high for popular titles, so
+neither reliably ranks results — selection should also weigh title match, completeness,
+file size, year, and language.
 
 ### 2. Get download link — `GET /eapi/book/{book_id}/{hash}/file`
 
@@ -68,5 +72,6 @@ suffixes appended on collision.
 
 ## Limits
 
-- Free accounts have a limited daily download quota (about 10), resetting at 00:00 UTC.
+- Free accounts have a limited daily download quota (about 10), resetting once daily
+  (historically around 00:00 UTC; the API does not report the count or reset time).
 - Credentials stay valid until you log out in the browser.
