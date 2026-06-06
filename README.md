@@ -1,5 +1,6 @@
 # holo-zlib
 
+[![CI](https://github.com/helebest/holo-zlib/actions/workflows/ci.yml/badge.svg)](https://github.com/helebest/holo-zlib/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Python](https://img.shields.io/badge/python-%E2%89%A53.10-blue.svg)
 ![Dependencies](https://img.shields.io/badge/dependencies-stdlib--only-brightgreen.svg)
