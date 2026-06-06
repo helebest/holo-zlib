@@ -14,6 +14,7 @@ Environment variables:
                               fall back to <skill>/ebooks. The CLI --output still
                               overrides this value.
 """
+
 from __future__ import annotations
 
 import json
@@ -120,8 +121,7 @@ def make_request(path, data=None, method="POST"):
         headers = {
             "User-Agent": _USER_AGENT,
             "Cookie": (
-                f"remix_userid={creds['remix_userid']}; "
-                f"remix_userkey={creds['remix_userkey']}"
+                f"remix_userid={creds['remix_userid']}; remix_userkey={creds['remix_userkey']}"
             ),
         }
         body = None

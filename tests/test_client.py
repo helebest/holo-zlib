@@ -1,4 +1,5 @@
 """Unit tests for client.py: credentials, requests, path resolution. HTTP is mocked."""
+
 from __future__ import annotations
 
 import urllib.error
@@ -7,6 +8,7 @@ import pytest
 
 
 # ---------- load_credentials ----------
+
 
 def test_load_credentials_reads_json(client):
     creds = client.load_credentials()
@@ -21,6 +23,7 @@ def test_load_credentials_missing_file_raises(client, monkeypatch, tmp_path):
 
 
 # ---------- make_request / auth ----------
+
 
 def test_make_request_post_uses_header_auth(client, mock_opener):
     mock_opener.queue = [b'{"success": 1, "books": []}']
@@ -68,6 +71,7 @@ def test_make_request_non_json_raises(client, mock_opener):
 
 # ---------- _unique_filepath ----------
 
+
 def test_unique_filepath_no_collision(client, tmp_path):
     target = tmp_path / "book.epub"
     assert client._unique_filepath(str(target)) == str(target)
@@ -81,6 +85,7 @@ def test_unique_filepath_with_collision(client, tmp_path):
 
 
 # ---------- credentials path resolution (walk-up) ----------
+
 
 def test_resolve_credentials_env_override(client, monkeypatch, tmp_path):
     explicit = tmp_path / "custom.json"
@@ -138,6 +143,7 @@ def test_resolve_credentials_does_not_match_legacy_name(client, monkeypatch, tmp
 
 
 # ---------- download dir resolution (walk-up) ----------
+
 
 def test_resolve_download_dir_env_override(client, monkeypatch, tmp_path):
     monkeypatch.setenv("HOLO_ZLIB_EBOOKS_DIR", str(tmp_path))
