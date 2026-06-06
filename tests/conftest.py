@@ -4,6 +4,7 @@ The client module keeps `_credentials` / `_opener` as module-level caches. Loadi
 fresh copy per test (via importlib spec) keeps those caches from leaking between tests
 and avoids touching sys.path (which could shadow the standard-library `zlib`).
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -57,9 +58,7 @@ def client(monkeypatch, tmp_path):
     module = _load_module("zlib_client", "client.py")
 
     creds_file = tmp_path / "zlib.json"
-    creds_file.write_text(
-        json.dumps({"remix_userid": "uid_test", "remix_userkey": "key_test"})
-    )
+    creds_file.write_text(json.dumps({"remix_userid": "uid_test", "remix_userkey": "key_test"}))
     monkeypatch.setattr(module, "CREDENTIALS_FILE", str(creds_file))
     monkeypatch.setattr(module, "DOWNLOAD_DIR", str(tmp_path / "books"))
 

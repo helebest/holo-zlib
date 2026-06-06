@@ -1,4 +1,5 @@
 """Repository-layout tests: validation passes and the CLI runs in script mode."""
+
 from __future__ import annotations
 
 import os
