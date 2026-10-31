@@ -95,10 +95,12 @@ def test_post_success_returns_body_and_keeps_secrets_off_argv(
     assert "key_test" not in " ".join(call["argv"])
     config = call["config"]
     assert 'url = "https://z-library.sk/eapi/book/search"' in config
-    assert 'request = "POST"' in config
-    assert "max-time = 30" in config
+    # POST with a body is inferred by curl; no forced method (which would stick across
+    # redirects).
+    assert "request = " not in config
+    assert "max-time" not in config
     assert 'header = "Remix-userkey: key_test"' in config
-    assert "cookie-jar = " in config and "location" in config
+    assert "cookie-jar = " in config
     # Temp files (response body + request body) are cleaned up.
     assert not os.path.exists(_config_value(config, "output"))
     assert not os.path.exists(_config_value(config, "data-binary").lstrip("@"))
@@ -184,3 +186,90 @@ def test_missing_curl_binary_maps_to_url_error(client, curl_opener, monkeypatch)
 
 def test_curl_quote_escapes_specials(client):
     assert client._curl_quote('a"b\\c\nd') == '"a\\"b\\\\c\\nd"'
+
+
+# ---------- timeouts: stall detection, not a total cap ----------
+
+
+def test_timeout_is_stall_based_not_total(client, curl_opener, monkeypatch):
+    fake = _install(client, monkeypatch, [(0, "200", b"ok")])
+    with curl_opener.open(urllib.request.Request("https://z-library.sk/dl"), timeout=120) as r:
+        r.read()
+    config = fake.calls[0]["config"].splitlines()
+    assert "connect-timeout = 120" in config
+    assert "speed-limit = 1" in config
+    assert "speed-time = 120" in config
+    assert not any(line.startswith("max-time") for line in config)
+
+
+# ---------- redirects ----------
+
+
+def _post(url="https://z-library.sk/eapi/book/search"):
+    return urllib.request.Request(
+        url,
+        data=b"message=x",
+        headers={"remix-userid": "uid_test", "remix-userkey": "key_test"},
+        method="POST",
+    )
+
+
+def test_redirects_followed_in_process_https_only(client, curl_opener, monkeypatch):
+    fake = _install(client, monkeypatch, [(0, "200", b"ok")])
+    with curl_opener.open(_post()) as resp:
+        resp.read()
+    config = fake.calls[0]["config"].splitlines()
+    # The cookie wall needs redirects followed on the same connection (one curl process).
+    assert "location" in config
+    assert f"max-redirs = {client._MAX_REDIRECTS}" in config
+    assert 'proto-redir = "=https"' in config
+
+
+def test_post_method_is_inferred_not_forced(client, curl_opener, monkeypatch):
+    """A forced `request = POST` would stick across 301/302/303 redirects."""
+    fake = _install(client, monkeypatch, [(0, "200", b"ok")])
+    with curl_opener.open(_post()) as resp:
+        resp.read()
+    assert "request = " not in fake.calls[0]["config"]
+
+
+def test_get_method_is_inferred_not_forced(client, curl_opener, monkeypatch):
+    fake = _install(client, monkeypatch, [(0, "200", b"ok")])
+    with curl_opener.open(urllib.request.Request("https://z-library.sk/x")) as resp:
+        resp.read()
+    assert "request = " not in fake.calls[0]["config"]
+
+
+def test_unusual_method_is_forced(client, curl_opener, monkeypatch):
+    fake = _install(client, monkeypatch, [(0, "200", b"ok")])
+    req = urllib.request.Request("https://z-library.sk/x", method="POST")  # no body
+    with curl_opener.open(req) as resp:
+        resp.read()
+    assert 'request = "POST"' in fake.calls[0]["config"]
+
+
+def test_same_origin_helper(client):
+    assert client._same_origin("https://z-library.sk/a", "https://Z-LIBRARY.sk:443/b")
+    assert not client._same_origin("https://z-library.sk/a", "http://z-library.sk/a")
+    assert not client._same_origin("https://z-library.sk/a", "https://dl.z-library.sk/a")
+
+
+# ---------- urllib transport applies the same cross-origin policy ----------
+
+
+def test_urllib_redirect_handler_drops_credentials_cross_origin(client):
+    handler = client._SameOriginRedirectHandler()
+    req = urllib.request.Request(
+        "https://z-library.sk/eapi/book/1/abc/file",
+        headers={"Cookie": "remix_userid=u; remix_userkey=k", "remix-userkey": "k"},
+    )
+    cross = handler.redirect_request(req, None, 302, "Found", {}, "https://other.example/x")
+    assert {k.lower() for k in cross.headers} & client._CREDENTIAL_HEADERS == set()
+    same = handler.redirect_request(req, None, 302, "Found", {}, "https://z-library.sk/y")
+    assert "Cookie" in same.headers
+
+
+def test_default_opener_uses_same_origin_redirect_handler(client, monkeypatch):
+    monkeypatch.delenv("HOLO_ZLIB_TRANSPORT", raising=False)
+    opener = client._get_opener()
+    assert any(isinstance(h, client._SameOriginRedirectHandler) for h in opener.handlers)

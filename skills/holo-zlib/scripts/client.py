@@ -116,6 +116,34 @@ _CURL_TLS_HANDSHAKE_FAILED = 35
 _CURL_TIMEOUT = 28
 _CURL_TLS_RETRIES = 5
 _CURL_RETRY_DELAY = 2.0
+_MAX_REDIRECTS = 10
+# Headers that carry Z-Library credentials; never forwarded to another origin.
+_CREDENTIAL_HEADERS = frozenset({"remix-userid", "remix-userkey", "cookie", "authorization"})
+
+
+def _origin(url: str):
+    parts = urllib.parse.urlsplit(url)
+    default_port = {"http": 80, "https": 443}.get(parts.scheme)
+    return parts.scheme.lower(), (parts.hostname or "").lower(), parts.port or default_port
+
+
+def _same_origin(a: str, b: str) -> bool:
+    return _origin(a) == _origin(b)
+
+
+class _SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """urllib redirect handler that drops credential headers on cross-origin hops."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and not _same_origin(req.full_url, new.full_url):
+            for name in list(new.headers):
+                if name.lower() in _CREDENTIAL_HEADERS:
+                    del new.headers[name]
+            for name in list(new.unredirected_hdrs):
+                if name.lower() in _CREDENTIAL_HEADERS:
+                    del new.unredirected_hdrs[name]
+        return new
 
 
 def _cookie_jar_path() -> str:
@@ -187,36 +215,52 @@ class _CurlOpener:
             # Pre-create with owner-only permissions; it holds session cookies.
             os.close(os.open(self.cookie_jar, os.O_CREAT | os.O_WRONLY, 0o600))
 
+    def _config(self, req, data_path, out_path, timeout):
+        cfg = [
+            f"url = {_curl_quote(req.full_url)}",
+            f"output = {_curl_quote(out_path)}",
+            f"cookie = {_curl_quote(self.cookie_jar)}",
+            f"cookie-jar = {_curl_quote(self.cookie_jar)}",
+            # The site's cookie wall (__diamwall) redirects and expects the cookie back on
+            # the same connection, so redirects must be followed inside one curl process.
+            "location",
+            f"max-redirs = {_MAX_REDIRECTS}",
+            'proto-redir = "=https"',
+            # Match urllib's timeout semantics (per blocking operation, no total cap):
+            # bound connection setup, and abort only if the transfer stalls (< 1 byte/s
+            # for `timeout` seconds). A total `max-time` would kill long downloads.
+            f"connect-timeout = {int(timeout)}",
+            "speed-limit = 1",
+            f"speed-time = {int(timeout)}",
+            'write-out = "%{http_code}"',
+            "silent",
+            "show-error",
+        ]
+        # Don't force the method when curl infers it (GET, or POST with a body): a forced
+        # method sticks across redirects, while an inferred POST becomes GET on
+        # 301/302/303 like urllib does.
+        method = req.get_method()
+        if method != ("POST" if data_path else "GET"):
+            cfg.append(f"request = {_curl_quote(method)}")
+        for key, value in req.header_items():
+            cfg.append(f"header = {_curl_quote(f'{key}: {value}')}")
+        if data_path:
+            cfg.append(f"data-binary = {_curl_quote('@' + data_path)}")
+        return ("\n".join(cfg) + "\n").encode()
+
     def open(self, req, timeout=30):
         self._ensure_cookie_jar()
         fd, out_path = tempfile.mkstemp(prefix="holo-zlib-")
         os.close(fd)
         data_path = None
         try:
-            cfg = [
-                f"url = {_curl_quote(req.full_url)}",
-                f"request = {_curl_quote(req.get_method())}",
-                f"max-time = {int(timeout)}",
-                f"output = {_curl_quote(out_path)}",
-                f"cookie = {_curl_quote(self.cookie_jar)}",
-                f"cookie-jar = {_curl_quote(self.cookie_jar)}",
-                'write-out = "%{http_code}"',
-                "location",
-                "silent",
-                "show-error",
-            ]
-            for key, value in req.header_items():
-                cfg.append(f"header = {_curl_quote(f'{key}: {value}')}")
             if req.data is not None:
                 fd, data_path = tempfile.mkstemp(prefix="holo-zlib-body-")
                 with os.fdopen(fd, "wb") as f:
                     f.write(req.data)
-                cfg.append(f"data-binary = {_curl_quote('@' + data_path)}")
-            config = ("\n".join(cfg) + "\n").encode()
-
-            result = self._run(config)
+            result = self._run(self._config(req, data_path, out_path, timeout))
             if result.returncode == _CURL_TIMEOUT:
-                raise TimeoutError(f"curl timed out after {int(timeout)}s")
+                raise TimeoutError(f"curl timed out (no progress for {int(timeout)}s)")
             if result.returncode != 0:
                 stderr = result.stderr.decode(errors="replace").strip()
                 raise urllib.error.URLError(f"curl exit {result.returncode}: {stderr}")
@@ -256,7 +300,7 @@ def _get_opener():
         if os.environ.get("HOLO_ZLIB_TRANSPORT", "").strip().lower() == "curl":
             _opener = _CurlOpener()
         else:
-            _opener = urllib.request.build_opener()
+            _opener = urllib.request.build_opener(_SameOriginRedirectHandler)
     return _opener
 
 

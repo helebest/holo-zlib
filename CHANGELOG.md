@@ -14,6 +14,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   site's cookie redirect wall. curl errors map onto `TimeoutError` / `URLError`, so
   existing error handling is unchanged. Default behaviour (urllib) is unchanged when the
   variable is unset; the runtime stays standard-library only.
+- The curl transport uses stall detection (`speed-limit`/`speed-time`) plus a connect
+  timeout instead of a total `max-time`, matching urllib's per-operation timeout so long
+  downloads aren't cut off. POST requests let curl infer the method, so 301/302/303
+  redirects switch to GET like urllib; redirects are limited to HTTPS and 10 hops.
+
+### Security
+- The default urllib transport now drops credential headers (`remix-userid`,
+  `remix-userkey`, `Cookie`, `Authorization`) when a redirect leaves the
+  `z-library.sk` origin.
 
 ## [0.3.0] - 2026-06-06
 
