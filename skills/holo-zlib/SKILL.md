@@ -101,6 +101,13 @@ titles first (or confirm scope) rather than firing a large batch that may exhaus
 - **"Network request failed" / "Request timed out (30s)" / "Download timed out (120s)"**:
   a connectivity problem — confirm your network (and proxy, e.g. mihomo) can reach
   `https://z-library.sk`, then retry. Large files can legitimately need the full window.
+- **TLS handshake fails / "EOF occurred in violation of protocol" / redirect loops**: some
+  networks and egress proxies only pass HTTP/2 TLS to `z-library.sk`, which Python's
+  urllib (HTTP/1.1 only) can't speak. Opt in to the curl transport:
+  `HOLO_ZLIB_TRANSPORT=curl python scripts/zlib.py search "..."`. It needs the `curl`
+  binary on `PATH`, retries flaky TLS handshakes, and keeps a cookie jar at
+  `~/.cache/holo-zlib-cookies.txt` (or `$XDG_CACHE_HOME`) to get past the site's cookie
+  redirect wall. Credentials are passed to curl via stdin, not the command line.
 - **"Failed to get download link"**: the `book_id`/`hash` is likely stale or invalid
   (hashes can change between searches) — re-run the search to get fresh identifiers and
   retry. This is not a quota problem, so don't wait for the next day.

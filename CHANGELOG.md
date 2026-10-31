@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- Optional curl transport, enabled with `HOLO_ZLIB_TRANSPORT=curl`, for networks or
+  egress proxies that only pass HTTP/2 TLS to `z-library.sk` (urllib speaks HTTP/1.1 only
+  and fails the handshake). Requests go through the `curl` binary with the full request
+  config (including credentials) on stdin rather than argv, TLS handshake failures (curl
+  exit 35) are retried, and a cookie jar at `~/.cache/holo-zlib-cookies.txt` gets past the
+  site's cookie redirect wall. curl errors map onto `TimeoutError` / `URLError`, so
+  existing error handling is unchanged. Default behaviour (urllib) is unchanged when the
+  variable is unset; the runtime stays standard-library only.
+- The curl transport uses stall detection (`speed-limit`/`speed-time`) plus a connect
+  timeout instead of a total `max-time`, matching urllib's per-operation timeout so long
+  downloads aren't cut off. POST requests let curl infer the method, so 301/302/303
+  redirects switch to GET like urllib; redirects are limited to HTTPS and 10 hops.
+
+### Security
+- The default urllib transport now drops credential headers (`remix-userid`,
+  `remix-userkey`, `Cookie`, `Authorization`) when a redirect leaves the
+  `z-library.sk` origin.
+
 ## [0.3.0] - 2026-06-06
 
 ### Changed
