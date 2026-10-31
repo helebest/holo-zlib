@@ -134,6 +134,7 @@ python skills/holo-zlib/scripts/zlib.py search "The Three-Body Problem" --ext ep
 |----------|---------|---------|
 | `HOLO_ZLIB_CREDENTIALS_FILE` | Credentials file path | first `credentials/zlib.json` found walking up from the skill dir; else `<skill>/credentials/zlib.json` |
 | `HOLO_ZLIB_EBOOKS_DIR` | Download directory (CLI `--output` still overrides) | first existing `ebooks/` walking up from the skill dir; else `<skill>/ebooks` |
+| `HOLO_ZLIB_TRANSPORT` | HTTP transport: set to `curl` to send requests through the `curl` binary (HTTP/2, TLS-handshake retries, cookie jar at `~/.cache/holo-zlib-cookies.txt`) for networks that reject urllib's HTTP/1.1 TLS | unset → Python `urllib` |
 
 ## Development
 

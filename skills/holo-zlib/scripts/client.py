@@ -13,12 +13,19 @@ Environment variables:
                               directory looking for an existing ebooks/ directory;
                               fall back to <skill>/ebooks. The CLI --output still
                               overrides this value.
+  HOLO_ZLIB_TRANSPORT         HTTP transport. Unset (default) uses urllib. Set to
+                              "curl" to send requests through the curl binary
+                              instead (HTTP/2 capable, persistent cookie jar) for
+                              networks that reject urllib's HTTP/1.1-only TLS.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import subprocess
+import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -102,10 +109,154 @@ def load_credentials():
     return _credentials
 
 
+# ---------- optional curl transport (HOLO_ZLIB_TRANSPORT=curl) ----------
+
+# curl exit codes (see `man curl`).
+_CURL_TLS_HANDSHAKE_FAILED = 35
+_CURL_TIMEOUT = 28
+_CURL_TLS_RETRIES = 5
+_CURL_RETRY_DELAY = 2.0
+
+
+def _cookie_jar_path() -> str:
+    cache = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(cache, "holo-zlib-cookies.txt")
+
+
+def _curl_quote(value) -> str:
+    """Quote a value for a curl config file (``-K``)."""
+    escaped = (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+class _CurlResponse:
+    """File-like response that streams the body curl wrote to a temp file.
+
+    The temp file is removed when the response is closed.
+    """
+
+    def __init__(self, path: str):
+        self._path = path
+        self._fh = open(path, "rb")
+
+    def read(self, size=-1):
+        return self._fh.read(size)
+
+    def close(self):
+        if not self._fh.closed:
+            self._fh.close()
+        if os.path.exists(self._path):
+            os.remove(self._path)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+
+class _CurlOpener:
+    """Drop-in replacement for the urllib opener that shells out to ``curl``.
+
+    Why: some networks / egress proxies only let HTTP/2 TLS handshakes through to
+    z-library.sk, and urllib only speaks HTTP/1.1 (the handshake fails with EOF). The
+    site also sets a cookie on a redirect wall, so a persistent cookie jar is kept to
+    avoid redirect loops.
+
+    The whole request (URL, headers including credentials, body path) is passed to curl
+    as a config file on stdin, never on argv, so credentials don't show up in ``ps``.
+    Errors are mapped onto the exceptions urllib raises (``TimeoutError`` /
+    ``urllib.error.URLError``) so callers' existing handling keeps working.
+    """
+
+    def __init__(self, curl: str = "curl", cookie_jar: str | None = None):
+        self.curl = curl
+        self.cookie_jar = cookie_jar or _cookie_jar_path()
+
+    def _ensure_cookie_jar(self):
+        os.makedirs(os.path.dirname(self.cookie_jar), exist_ok=True)
+        if not os.path.exists(self.cookie_jar):
+            # Pre-create with owner-only permissions; it holds session cookies.
+            os.close(os.open(self.cookie_jar, os.O_CREAT | os.O_WRONLY, 0o600))
+
+    def open(self, req, timeout=30):
+        self._ensure_cookie_jar()
+        fd, out_path = tempfile.mkstemp(prefix="holo-zlib-")
+        os.close(fd)
+        data_path = None
+        try:
+            cfg = [
+                f"url = {_curl_quote(req.full_url)}",
+                f"request = {_curl_quote(req.get_method())}",
+                f"max-time = {int(timeout)}",
+                f"output = {_curl_quote(out_path)}",
+                f"cookie = {_curl_quote(self.cookie_jar)}",
+                f"cookie-jar = {_curl_quote(self.cookie_jar)}",
+                'write-out = "%{http_code}"',
+                "location",
+                "silent",
+                "show-error",
+            ]
+            for key, value in req.header_items():
+                cfg.append(f"header = {_curl_quote(f'{key}: {value}')}")
+            if req.data is not None:
+                fd, data_path = tempfile.mkstemp(prefix="holo-zlib-body-")
+                with os.fdopen(fd, "wb") as f:
+                    f.write(req.data)
+                cfg.append(f"data-binary = {_curl_quote('@' + data_path)}")
+            config = ("\n".join(cfg) + "\n").encode()
+
+            result = self._run(config)
+            if result.returncode == _CURL_TIMEOUT:
+                raise TimeoutError(f"curl timed out after {int(timeout)}s")
+            if result.returncode != 0:
+                stderr = result.stderr.decode(errors="replace").strip()
+                raise urllib.error.URLError(f"curl exit {result.returncode}: {stderr}")
+            status = result.stdout.decode(errors="replace").strip()
+            code = int(status) if status.isdigit() else 0
+            if code >= 400:
+                raise urllib.error.URLError(f"HTTP {code}")
+            response = _CurlResponse(out_path)
+            out_path = None  # ownership moves to the response
+            return response
+        finally:
+            for path in (out_path, data_path):
+                if path and os.path.exists(path):
+                    os.remove(path)
+
+    def _run(self, config: bytes):
+        """Run curl, retrying TLS handshake failures (flaky on some egress paths)."""
+        for attempt in range(_CURL_TLS_RETRIES):
+            try:
+                result = subprocess.run(
+                    [self.curl, "--config", "-"], input=config, capture_output=True
+                )
+            except FileNotFoundError as e:
+                raise urllib.error.URLError(
+                    "curl not found; install curl or unset HOLO_ZLIB_TRANSPORT"
+                ) from e
+            if result.returncode != _CURL_TLS_HANDSHAKE_FAILED:
+                return result
+            if attempt < _CURL_TLS_RETRIES - 1:
+                time.sleep(_CURL_RETRY_DELAY)
+        return result
+
+
 def _get_opener():
     global _opener
     if _opener is None:
-        _opener = urllib.request.build_opener()
+        if os.environ.get("HOLO_ZLIB_TRANSPORT", "").strip().lower() == "curl":
+            _opener = _CurlOpener()
+        else:
+            _opener = urllib.request.build_opener()
     return _opener
 
 
